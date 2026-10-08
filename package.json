@@ -1,0 +1,16 @@
+{
+  "name": "lemirecodechat-monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/cli",
+    "packages/web"
+  ],
+  "scripts": {
+    "build": "npm run build -w packages/cli && npm run build -w packages/web",
+    "build:cli": "npm run build -w packages/cli",
+    "build:web": "npm run build -w packages/web",
+    "dev:web": "npm run dev -w packages/web",
+    "typecheck": "tsc -p packages/cli --noEmit && tsc -p packages/web --noEmit",
+    "test": "node --test test/*.test.mjs"
+  }
+}

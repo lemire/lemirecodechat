@@ -1,0 +1,446 @@
+/* ── Diff theme (responds to --color-* tokens from app.css) ─── */
+
+/* Diff library CSS custom properties */
+:root {
+  --diff-background-color: var(--color-page-bg);
+  --diff-text-color: var(--color-text-primary);
+  --diff-font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, "Liberation Mono", monospace;
+  --diff-selection-background-color: #264f78;
+  --diff-selection-text-color: var(--color-text-primary);
+  --diff-gutter-insert-background-color: #1b4721;
+  --diff-gutter-delete-background-color: #67060c;
+  --diff-code-insert-background-color: rgba(46, 160, 67, 0.15);
+  --diff-code-delete-background-color: rgba(248, 81, 73, 0.15);
+  --diff-code-insert-edit-background-color: rgba(46, 160, 67, 0.4);
+  --diff-code-delete-edit-background-color: rgba(248, 81, 73, 0.4);
+  --diff-code-selected-background-color: rgba(56, 139, 253, 0.15);
+  --diff-omit-gutter-line-color: var(--color-text-muted);
+  --diff-gutter-insert-text: #adbac7;
+  --diff-gutter-delete-text: #adbac7;
+  --diff-gutter-hover-bg: rgba(56, 139, 253, 0.4);
+
+  /* Syntax highlighting tokens */
+  --syntax-comment: #8b949e;
+  --syntax-punctuation: #e6edf3;
+  --syntax-property: #79c0ff;
+  --syntax-string: #a5d6ff;
+  --syntax-operator: #79c0ff;
+  --syntax-function: #d2a8ff;
+  --syntax-keyword: #ff7b72;
+  --syntax-regex: #ffa657;
+  --syntax-deleted: #ffa198;
+  --syntax-inserted: #7ee787;
+}
+
+/* Auto-detect light: diff-specific overrides */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --diff-selection-background-color: rgba(9, 105, 218, 0.2);
+    --diff-gutter-insert-background-color: #ccffd8;
+    --diff-gutter-delete-background-color: #ffd7d5;
+    --diff-gutter-insert-text: rgba(101, 109, 118, 0.85);
+    --diff-gutter-delete-text: rgba(101, 109, 118, 0.85);
+    --diff-gutter-hover-bg: rgba(9, 105, 218, 0.3);
+    --diff-code-insert-background-color: rgba(46, 160, 67, 0.1);
+    --diff-code-delete-background-color: rgba(248, 81, 73, 0.1);
+    --diff-code-insert-edit-background-color: rgba(46, 160, 67, 0.3);
+    --diff-code-delete-edit-background-color: rgba(248, 81, 73, 0.3);
+
+    --syntax-comment: #57606a;
+    --syntax-punctuation: #1f2328;
+    --syntax-property: #0550ae;
+    --syntax-string: #0a3069;
+    --syntax-operator: #0550ae;
+    --syntax-function: #8250df;
+    --syntax-keyword: #cf222e;
+    --syntax-regex: #953800;
+    --syntax-deleted: #cf222e;
+    --syntax-inserted: #1a7f37;
+  }
+}
+
+/* Manual override: light */
+[data-theme="light"] {
+  --diff-selection-background-color: rgba(9, 105, 218, 0.2);
+  --diff-gutter-insert-background-color: #ccffd8;
+  --diff-gutter-delete-background-color: #ffd7d5;
+  --diff-gutter-insert-text: #4d5561;
+  --diff-gutter-delete-text: #4d5561;
+  --diff-gutter-hover-bg: rgba(9, 105, 218, 0.3);
+  --diff-code-insert-background-color: rgba(46, 160, 67, 0.1);
+  --diff-code-delete-background-color: rgba(248, 81, 73, 0.1);
+  --diff-code-insert-edit-background-color: rgba(46, 160, 67, 0.3);
+  --diff-code-delete-edit-background-color: rgba(248, 81, 73, 0.3);
+
+  --syntax-comment: #57606a;
+  --syntax-punctuation: #1f2328;
+  --syntax-property: #0550ae;
+  --syntax-string: #0a3069;
+  --syntax-operator: #0550ae;
+  --syntax-function: #8250df;
+  --syntax-keyword: #cf222e;
+  --syntax-regex: #953800;
+  --syntax-deleted: #cf222e;
+  --syntax-inserted: #1a7f37;
+}
+
+/* Manual override: dark (restores defaults) */
+[data-theme="dark"] {
+  --diff-selection-background-color: #264f78;
+  --diff-gutter-insert-background-color: #1b4721;
+  --diff-gutter-delete-background-color: #67060c;
+  --diff-gutter-insert-text: #adbac7;
+  --diff-gutter-delete-text: #adbac7;
+  --diff-gutter-hover-bg: rgba(56, 139, 253, 0.4);
+  --diff-code-insert-background-color: rgba(46, 160, 67, 0.15);
+  --diff-code-delete-background-color: rgba(248, 81, 73, 0.15);
+  --diff-code-insert-edit-background-color: rgba(46, 160, 67, 0.4);
+  --diff-code-delete-edit-background-color: rgba(248, 81, 73, 0.4);
+
+  --syntax-comment: #8b949e;
+  --syntax-punctuation: #e6edf3;
+  --syntax-property: #79c0ff;
+  --syntax-string: #a5d6ff;
+  --syntax-operator: #79c0ff;
+  --syntax-function: #d2a8ff;
+  --syntax-keyword: #ff7b72;
+  --syntax-regex: #ffa657;
+  --syntax-deleted: #ffa198;
+  --syntax-inserted: #7ee787;
+}
+
+/* ── Table reset ──────────────────────────────────────── */
+
+.diff {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 12px;
+  line-height: 20px;
+  tab-size: 4;
+}
+
+/* Code cells: long lines wrap by default so nothing is hidden off-screen */
+.diff-code {
+  padding: 0 16px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  word-break: normal;
+}
+
+/* Opt-out: keep lines on one row and scroll the file horizontally */
+.diff-nowrap .diff-code {
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.diff-nowrap .diff {
+  width: max-content;
+  min-width: 100%;
+  table-layout: auto;
+}
+
+/* Gutter (line numbers) */
+.diff-gutter {
+  cursor: pointer;
+  user-select: none;
+  position: relative;
+  width: 1%;
+  min-width: 50px;
+  padding: 0 10px 0 22px;
+  text-align: right;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 20px;
+  vertical-align: top;
+  white-space: nowrap;
+}
+
+/* Improve contrast: lighten line numbers on colored gutter rows */
+.diff-gutter-insert {
+  color: var(--diff-gutter-insert-text);
+}
+
+.diff-gutter-delete {
+  color: var(--diff-gutter-delete-text);
+}
+
+/* Plus icon — hidden by default, shown on hover */
+.diff-gutter::after {
+  content: '+';
+  position: absolute;
+  left: 4px;
+  top: 0;
+  width: 16px;
+  height: 20px;
+  line-height: 20px;
+  text-align: center;
+  font-size: 12px;
+  font-weight: bold;
+  border-radius: 3px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.1s;
+  background-color: var(--color-info);
+  color: var(--color-text-on-emphasis);
+}
+
+.diff-gutter:hover::after {
+  opacity: 1;
+}
+
+/* Edit mode: a pencil instead of the plus, and only on lines that exist in the new file */
+.edit-mode .diff-gutter::after {
+  content: '\270E';
+  background-color: var(--color-warning);
+}
+
+.edit-mode .diff-gutter-delete {
+  cursor: not-allowed;
+}
+
+.edit-mode .diff-gutter-delete::after {
+  display: none;
+}
+
+.diff-gutter:hover {
+  background-color: var(--diff-gutter-hover-bg) !important;
+  color: var(--color-text-primary);
+}
+
+/* Hunk header / separator */
+.diff-hunk-header {
+  background-color: rgba(56, 139, 253, 0.1);
+  color: var(--color-text-muted);
+  padding: 0 10px;
+}
+
+.diff-hunk-header-content {
+  font-size: 12px;
+}
+
+/* Widget rows (comment containers) */
+.diff-widget {
+  background-color: var(--color-surface-bg);
+}
+
+.diff-widget-content {
+  padding: 8px 16px;
+  background-color: var(--color-surface-bg);
+  border-top: 1px solid var(--color-border-default);
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+/* Align widget content with code area (skip gutter columns) */
+.diff-unified .diff-widget-content {
+  padding-left: 116px; /* 2 gutter columns (50px min-width + padding each) */
+}
+
+.diff-split .diff-widget-content {
+  padding-left: 66px; /* 1 gutter column */
+}
+
+/* Line hover — show plus icon via gutter hover above */
+
+/* Decoration / expand rows */
+.diff-decoration {
+  background-color: var(--color-surface-bg);
+}
+
+.diff-decoration-gutter {
+  background-color: var(--color-surface-bg);
+  border-top: 1px solid var(--color-border-default);
+  border-bottom: 1px solid var(--color-border-default);
+  vertical-align: middle;
+}
+
+.diff-decoration-content {
+  color: var(--color-text-muted);
+  padding: 4px 10px;
+  border-top: 1px solid var(--color-border-default);
+  border-bottom: 1px solid var(--color-border-default);
+}
+
+/* Expand gutter controls */
+.expand-gutter {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 2px 0;
+}
+
+.expand-gutter-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 3px;
+  color: var(--color-text-muted);
+  cursor: pointer;
+  transition: background-color 0.1s, color 0.1s;
+}
+
+.expand-gutter-btn:hover {
+  background-color: var(--color-info);
+  color: var(--color-text-on-emphasis);
+}
+
+.expand-text {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  user-select: none;
+}
+
+/* ── Syntax highlighting tokens ───────────────────────── */
+
+.diff-code .token.comment,
+.diff-code .token.prolog,
+.diff-code .token.doctype,
+.diff-code .token.cdata {
+  color: var(--syntax-comment);
+}
+
+.diff-code .token.punctuation {
+  color: var(--syntax-punctuation);
+}
+
+.diff-code .token.namespace {
+  opacity: 0.7;
+}
+
+.diff-code .token.property,
+.diff-code .token.tag,
+.diff-code .token.boolean,
+.diff-code .token.number,
+.diff-code .token.constant,
+.diff-code .token.symbol {
+  color: var(--syntax-property);
+}
+
+.diff-code .token.selector,
+.diff-code .token.attr-name,
+.diff-code .token.string,
+.diff-code .token.char,
+.diff-code .token.builtin {
+  color: var(--syntax-string);
+}
+
+.diff-code .token.operator,
+.diff-code .token.entity,
+.diff-code .token.url,
+.diff-code .token.variable {
+  color: var(--syntax-operator);
+}
+
+.diff-code .token.atrule,
+.diff-code .token.attr-value,
+.diff-code .token.function,
+.diff-code .token.class-name {
+  color: var(--syntax-function);
+}
+
+.diff-code .token.keyword {
+  color: var(--syntax-keyword);
+}
+
+.diff-code .token.regex,
+.diff-code .token.important {
+  color: var(--syntax-regex);
+}
+
+.diff-code .token.important,
+.diff-code .token.bold {
+  font-weight: bold;
+}
+
+.diff-code .token.italic {
+  font-style: italic;
+}
+
+.diff-code .token.deleted {
+  color: var(--syntax-deleted);
+}
+
+.diff-code .token.inserted {
+  color: var(--syntax-inserted);
+}
+
+/* Gutter highlight during drag selection (matches code cell highlight from selectedChanges) */
+.diff-gutter-selected {
+  background-color: var(--diff-gutter-hover-bg) !important;
+}
+
+/* Hide the "+" icon during drag selection — user is selecting, not adding */
+.diff-gutter-selected::after {
+  opacity: 0 !important;
+}
+
+/* markEdits enhancer — character-level edit highlights */
+.diff-code-edit .diff-code-edit-marker {
+  background-color: rgba(210, 153, 34, 0.2);
+  border-radius: 2px;
+  padding: 1px 0;
+}
+
+/* Inline suggestion editor (CodeMirror) */
+.suggestion-editor .cm-editor {
+  font-size: 12px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  max-height: 60vh;
+}
+
+.suggestion-editor .cm-editor.cm-focused {
+  outline: none;
+  border-color: var(--color-warning);
+}
+
+.suggestion-editor .cm-scroller {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  line-height: 20px;
+}
+
+/* Rendered suggestion (original vs replacement) */
+.suggestion-diff {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 20px;
+  border: 1px solid var(--color-border-default);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.suggestion-diff-line {
+  display: flex;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  padding: 0 8px;
+}
+
+.suggestion-diff-line::before {
+  flex: none;
+  width: 2ch;
+  color: var(--color-text-muted);
+}
+
+.suggestion-diff-line.del {
+  background-color: var(--diff-code-delete-background-color);
+}
+
+.suggestion-diff-line.del::before {
+  content: '-';
+}
+
+.suggestion-diff-line.ins {
+  background-color: var(--diff-code-insert-background-color);
+}
+
+.suggestion-diff-line.ins::before {
+  content: '+';
+}
+
+.suggestion-diff-line.same::before {
+  content: ' ';
+}

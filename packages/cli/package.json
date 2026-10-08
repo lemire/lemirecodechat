@@ -1,0 +1,32 @@
+{
+  "name": "lemirecodechat",
+  "version": "0.1.0",
+  "description": "Human-in-the-loop code review (with suggested edits) for AI agents",
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "lemirecodechat": "./dist/cli.js"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "files": ["dist", "web-dist"],
+  "scripts": {
+    "build": "tsup",
+    "dev": "tsup --watch"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.12.0",
+    "diff": "^7.0.0",
+    "open": "^10.1.0",
+    "parse-diff": "^0.11.1",
+    "ws": "^8.19.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@types/diff": "^7.0.0",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.0",
+    "tsup": "^8.4.0",
+    "typescript": "^5.7.0"
+  }
+}

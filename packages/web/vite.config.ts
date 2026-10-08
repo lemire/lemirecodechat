@@ -1,0 +1,23 @@
+import { defineConfig } from 'vite';
+import react from '@vitejs/plugin-react';
+import tailwindcss from '@tailwindcss/vite';
+
+export default defineConfig({
+  plugins: [react(), tailwindcss()],
+  build: {
+    outDir: 'dist',
+    emptyOutDir: true,
+    // CodeMirror makes the main chunk large; languages are split out and loaded lazily
+    chunkSizeWarningLimit: 1500,
+  },
+  server: {
+    proxy: {
+      // Forward WebSocket connections to the CLI review server during development.
+      // Start the CLI with: codechat review --no-open --port 3001
+      '/': {
+        target: 'ws://127.0.0.1:3001',
+        ws: true,
+      },
+    },
+  },
+});
