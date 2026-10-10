@@ -91,6 +91,16 @@ async function getDiffBase(cwd: string): Promise<string> {
   }
 }
 
+/** Resolve a ref (branch, tag, `HEAD~2`, SHA) to a commit SHA, or throw a readable error. */
+export async function resolveCommit(cwd: string, ref: string): Promise<string> {
+  if (ref.startsWith('-')) throw new Error(`Invalid base: ${ref}`);
+  try {
+    return (await git(cwd, ['rev-parse', '--verify', '--quiet', `${ref}^{commit}`])).trim();
+  } catch {
+    throw new Error(`Unknown base: ${ref} (not a commit in this repository)`);
+  }
+}
+
 const DIFF_FLAGS = ['-M', '--no-color', '--no-ext-diff'];
 
 const PATHS_PER_GIT_CALL = 500;
@@ -248,12 +258,17 @@ export interface CollectedChanges {
 }
 
 /**
- * Gather every uncommitted change (tracked and untracked) in the repository.
+ * Gather every uncommitted change (tracked and untracked) in the repository, or,
+ * when `baseCommit` is given, every change in the working tree since that commit.
  * Binary files are left out entirely. Files whose diff would be large are listed
  * with `large: true` and their diff is not generated; use `getFileDiff` for those.
  */
-export async function collectChanges(cwd: string, limits: DiffLimits = DEFAULT_LIMITS): Promise<CollectedChanges> {
-  const base = await getDiffBase(cwd);
+export async function collectChanges(
+  cwd: string,
+  limits: DiffLimits = DEFAULT_LIMITS,
+  baseCommit?: string,
+): Promise<CollectedChanges> {
+  const base = baseCommit ?? (await getDiffBase(cwd));
   const [{ entries, raw }, untracked] = await Promise.all([getTrackedChanges(cwd, base), getUntrackedFiles(cwd)]);
 
   const files: FileSummary[] = [];
@@ -358,8 +373,8 @@ export async function collectChanges(cwd: string, limits: DiffLimits = DEFAULT_L
 }
 
 /** Generate the diff of a single file on demand (used for large files). */
-export async function getFileDiff(cwd: string, file: FileSummary): Promise<string> {
-  const base = await getDiffBase(cwd);
+export async function getFileDiff(cwd: string, file: FileSummary, baseCommit?: string): Promise<string> {
+  const base = baseCommit ?? (await getDiffBase(cwd));
   const paths = file.oldPath ? [file.oldPath, file.path] : [file.path];
   const tracked = await git(cwd, ['diff', base, ...DIFF_FLAGS, '--', ...paths], { maxBytes: MAX_ON_DEMAND_BYTES });
   if (tracked.trim()) return tracked;
@@ -367,10 +382,10 @@ export async function getFileDiff(cwd: string, file: FileSummary): Promise<strin
   return untrackedDiff(file.path, await readTextFile(cwd, file.path));
 }
 
-/** Content of a file at HEAD, or null if it does not exist there. */
-export async function getHeadContent(cwd: string, filePath: string): Promise<string | null> {
+/** Content of a file at HEAD (or at `baseCommit`), or null if it does not exist there. */
+export async function getBaseContent(cwd: string, filePath: string, baseCommit = 'HEAD'): Promise<string | null> {
   try {
-    return await git(cwd, ['show', `HEAD:${filePath}`], { maxBytes: MAX_ON_DEMAND_BYTES });
+    return await git(cwd, ['show', `${baseCommit}:${filePath}`], { maxBytes: MAX_ON_DEMAND_BYTES });
   } catch {
     return null;
   }

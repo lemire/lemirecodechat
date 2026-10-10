@@ -11,6 +11,13 @@ export interface Session {
   skipped?: SkippedFile[];
   comments: Comment[];
   description?: string;
+  /**
+   * Ref the working tree is compared against when the review covers commits too
+   * (e.g. "main" or "HEAD~2"). Absent: only uncommitted changes (against HEAD).
+   */
+  base?: string;
+  /** Commit `base` resolved to when the review was opened. */
+  baseCommit?: string;
 }
 
 export interface FileSummary {
@@ -54,11 +61,25 @@ export interface Comment {
   agentReply?: string;
 }
 
+/**
+ * Why a review round ended:
+ * - 'submitted': the reviewer clicked Submit.
+ * - 'timeout': the session timed out before the reviewer submitted.
+ * - 'closed': every browser tab was closed without submitting.
+ */
+export type ReviewEndReason = 'submitted' | 'timeout' | 'closed';
+
 export interface ReviewResult {
   sessionId: string;
+  /** 'approved' only when the reviewer submitted with no unresolved comments. */
   status: 'pending' | 'approved' | 'changes_requested';
+  /** Present when the result comes from a review round (absent for replies). */
+  reason?: ReviewEndReason;
   comments: Comment[];
+  /** The reviewer's overall message from the submit dialog. */
   summary?: string;
+  /** Present when the review covered commits: the ref the working tree was compared against. */
+  base?: string;
 }
 
 export interface ReviewServer {

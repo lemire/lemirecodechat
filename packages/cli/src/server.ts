@@ -8,6 +8,7 @@ import { z } from 'zod';
 import type {
   Session,
   Comment,
+  ReviewEndReason,
   ReviewResult,
   ReviewServer,
   ServerMessage,
@@ -15,7 +16,7 @@ import type {
 import {
   collectChanges,
   getFileDiff,
-  getHeadContent,
+  getBaseContent,
   readTextFile,
   OutputTooLargeError,
   DEFAULT_LIMITS,
@@ -184,12 +185,13 @@ export async function startReviewServer(options: ServerOptions): Promise<ReviewS
 
     let reviewSummary: string | undefined;
 
-    async function doSubmit(): Promise<void> {
+    async function doSubmit(reason: ReviewEndReason): Promise<void> {
       if (submitted) return;
       submitted = true;
 
+      // Only an explicit submit can approve: a timeout or a closed tab is not a sign-off
       const pendingComments = session.comments.filter((c) => !c.resolved);
-      const status = pendingComments.length > 0 ? 'changes_requested' : 'approved';
+      const status = pendingComments.length > 0 ? 'changes_requested' : reason === 'submitted' ? 'approved' : 'pending';
       session.status = status;
       await saveSession(session);
 
@@ -198,8 +200,10 @@ export async function startReviewServer(options: ServerOptions): Promise<ReviewS
       const result: ReviewResult = {
         sessionId: session.id,
         status,
+        reason,
         comments: session.comments,
         ...(reviewSummary ? { summary: reviewSummary } : {}),
+        ...(session.base ? { base: session.base } : {}),
       };
 
       if (timeoutTimer) clearTimeout(timeoutTimer);
@@ -233,7 +237,7 @@ export async function startReviewServer(options: ServerOptions): Promise<ReviewS
         const activeClients = [...wss.clients].filter((c) => c.readyState === c.OPEN);
         if (activeClients.length === 0) {
           disconnectTimer = setTimeout(() => {
-            doSubmit().catch((err) => process.stderr.write(`Submit error: ${err}\n`));
+            doSubmit('closed').catch((err) => process.stderr.write(`Submit error: ${err}\n`));
           }, DISCONNECT_GRACE);
         }
       });
@@ -326,7 +330,7 @@ export async function startReviewServer(options: ServerOptions): Promise<ReviewS
             if (msg.data?.summary) {
               reviewSummary = msg.data.summary;
             }
-            await doSubmit();
+            await doSubmit('submitted');
             break;
           }
 
@@ -335,8 +339,8 @@ export async function startReviewServer(options: ServerOptions): Promise<ReviewS
             const file = findReviewedFile(filePath);
             if (!file) break;
 
-            // Old version from HEAD (absent for new files), new version from the working tree (absent if deleted)
-            const oldContent = await getHeadContent(session.repoPath, file.oldPath ?? file.path);
+            // Old version from the base (absent for new files), new version from the working tree (absent if deleted)
+            const oldContent = await getBaseContent(session.repoPath, file.oldPath ?? file.path, session.baseCommit);
             let newContent: string | null = null;
             try {
               newContent = await readTextFile(session.repoPath, file.path);
@@ -353,7 +357,7 @@ export async function startReviewServer(options: ServerOptions): Promise<ReviewS
             const file = findReviewedFile(filePath);
             if (!file) break;
             try {
-              const diff = await getFileDiff(session.repoPath, file);
+              const diff = await getFileDiff(session.repoPath, file, session.baseCommit);
               send(ws, { type: 'file_diff', data: { filePath: file.path, diff } });
             } catch (err) {
               send(ws, { type: 'error', data: { message: `Could not load diff for ${filePath}: ${errorMessage(err)}` } });
@@ -370,7 +374,7 @@ export async function startReviewServer(options: ServerOptions): Promise<ReviewS
 
       // Start the overall timeout
       timeoutTimer = setTimeout(() => {
-        doSubmit().catch((err) => process.stderr.write(`Submit error: ${err}\n`));
+        doSubmit('timeout').catch((err) => process.stderr.write(`Submit error: ${err}\n`));
       }, timeout);
 
       // Watch for file changes and update diff live
@@ -381,7 +385,7 @@ export async function startReviewServer(options: ServerOptions): Promise<ReviewS
           if (watchDebounce) clearTimeout(watchDebounce);
           watchDebounce = setTimeout(async () => {
             try {
-              const changes = await collectChanges(session.repoPath, limits);
+              const changes = await collectChanges(session.repoPath, limits, session.baseCommit);
               if (changes.fingerprint === fingerprint) return;
               fingerprint = changes.fingerprint;
               session.diff = changes.diff;

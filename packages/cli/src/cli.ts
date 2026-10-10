@@ -1,20 +1,26 @@
 #!/usr/bin/env node
 
 import { parseArgs } from 'node:util';
+import { readFile } from 'node:fs/promises';
 import { version } from './version.js';
-import { executeReview, getSessionById, listSessions, WorkflowError } from './workflow.js';
+import { executeReview, recordReplies, getSessionById, listSessions, WorkflowError } from './workflow.js';
+import type { Reply } from './session.js';
 
 function printUsage(): void {
   console.error(`
-Usage: lemirecodechat [options]
-       lemirecodechat sessions [<id>]
-       lemirecodechat mcp [--setup]
+Usage: lemirecodechat [options]                    review uncommitted changes
+       lemirecodechat reply [-f <file>] [-s <id>]  record replies (JSON from file or stdin)
+       lemirecodechat sessions [<id>]              list sessions / print one
+       lemirecodechat mcp [--setup]                MCP server over stdio / setup help
 
 Options:
   -s, --session <id>         Resume a session
+  --new                      Start a new session instead of resuming
+  -b, --base <ref>           Also review commits: compare the working tree against <ref>
   -d, --description <text>   Describe the changes
   -p, --port <n>             Server port
   -t, --timeout <min>        Session timeout (default: 30)
+  -f, --file <path>          reply: read replies from this file (default: stdin)
   --max-lines <n>            Show diffs with more changed lines on demand only (default: 1000)
   --max-bytes <n>            Show diffs larger than this on demand only (default: 262144)
   --no-open                  Don't open browser
@@ -39,6 +45,8 @@ function printMcpSetup(): void {
 
 async function runReview(options: {
   session?: string;
+  new?: boolean;
+  base?: string;
   description?: string;
   port?: string;
   timeout?: string;
@@ -49,6 +57,8 @@ async function runReview(options: {
   const outcome = await executeReview({
     repoPath: process.cwd(),
     sessionId: options.session,
+    newSession: options.new,
+    base: options.base,
     description: options.description,
     port: options.port ? parseInt(options.port, 10) : undefined,
     timeout: options.timeout ? parseInt(options.timeout, 10) * 60_000 : undefined,
@@ -61,7 +71,7 @@ async function runReview(options: {
 
   switch (outcome.kind) {
     case 'empty_diff':
-      console.error('No uncommitted changes found.');
+      console.error(outcome.message);
       process.exit(0);
       break;
     case 'skipped':
@@ -69,6 +79,44 @@ async function runReview(options: {
       console.log(JSON.stringify(outcome.result, null, 2));
       break;
   }
+}
+
+async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY) {
+    throw new WorkflowError('reply expects JSON on stdin or --file <path>.');
+  }
+  const chunks: Buffer[] = [];
+  for await (const chunk of process.stdin) chunks.push(chunk as Buffer);
+  return Buffer.concat(chunks).toString('utf-8');
+}
+
+/** Accepts `[{commentId, body, resolved?}, ...]` or `{ "replies": [...] }`. */
+function parseReplies(text: string): Reply[] {
+  let json: unknown;
+  try {
+    json = JSON.parse(text);
+  } catch (err) {
+    throw new WorkflowError(`Replies are not valid JSON: ${(err as Error).message}`);
+  }
+  const list = Array.isArray(json) ? json : (json as { replies?: unknown })?.replies;
+  if (!Array.isArray(list) || list.length === 0) {
+    throw new WorkflowError('Expected a non-empty array of replies, or { "replies": [...] }.');
+  }
+  return list.map((r, i) => {
+    if (typeof r?.commentId !== 'string' || typeof r?.body !== 'string') {
+      throw new WorkflowError(`Reply ${i}: needs string "commentId" and "body".`);
+    }
+    if (r.resolved !== undefined && typeof r.resolved !== 'boolean') {
+      throw new WorkflowError(`Reply ${i}: "resolved" must be true or false.`);
+    }
+    return { commentId: r.commentId, body: r.body, ...(r.resolved !== undefined ? { resolved: r.resolved } : {}) };
+  });
+}
+
+async function runReply(options: { file?: string; session?: string }): Promise<void> {
+  const text = options.file ? await readFile(options.file, 'utf-8') : await readStdin();
+  const result = await recordReplies(process.cwd(), parseReplies(text), options.session);
+  console.log(JSON.stringify(result, null, 2));
 }
 
 async function runSessions(sessionId?: string): Promise<void> {
@@ -110,6 +158,9 @@ async function main(): Promise<void> {
     args: process.argv.slice(2),
     options: {
       session: { type: 'string', short: 's' },
+      new: { type: 'boolean' },
+      base: { type: 'string', short: 'b' },
+      file: { type: 'string', short: 'f' },
       description: { type: 'string', short: 'd' },
       port: { type: 'string', short: 'p' },
       timeout: { type: 'string', short: 't' },
@@ -135,7 +186,9 @@ async function main(): Promise<void> {
     process.exit(0);
   }
 
-  if (command === 'sessions') {
+  if (command === 'reply') {
+    await runReply(values);
+  } else if (command === 'sessions') {
     await runSessions(positionals[1]);
   } else if (command === 'mcp') {
     if (values.setup) {

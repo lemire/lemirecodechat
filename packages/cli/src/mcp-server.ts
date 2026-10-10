@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 import { version } from './version.js';
-import { executeReview, WorkflowError } from './workflow.js';
+import { executeReview, recordReplies, WorkflowError } from './workflow.js';
 
 export async function startMcpServer(): Promise<void> {
   const server = new McpServer({
@@ -12,40 +12,46 @@ export async function startMcpServer(): Promise<void> {
 
   server.tool(
     'codechat_review',
-    `Open a browser UI for the user to review uncommitted changes and leave inline comments. Blocks until the user submits. Returns a ReviewResult JSON with { sessionId, status, comments }.
+    `Open a local browser UI where the user reviews your changes themselves: inline comments and suggested edits, like a pull request. Blocks until the user submits (or the session times out). Use when the user wants to review your work, not to review code on their behalf.
 
-Comments come in two kinds:
-- kind "comment" (or absent): free-text feedback on filePath at line (to endLine).
-- kind "suggestion": a concrete edit the reviewer typed into an editor. suggestion.original is the text of lines line..endLine of filePath when the reviewer made it; suggestion.replacement is what they want there instead; suggestion.patch is the same change as a unified diff. body is an optional rationale. Apply suggestions faithfully (replace original with replacement exactly), unless they conflict with later changes or are clearly broken — in that case say so in your reply.
+Scope: by default only UNCOMMITTED changes (working tree vs HEAD, untracked files included). If you already committed the work, pass base (e.g. "HEAD~1", "main") to compare the working tree against that ref.
+
+Result: { sessionId, status, reason, summary?, base?, comments }.
+- Trust status "approved" only when reason is "submitted". reason "timeout" or "closed" means the user did not finish: say so and ask; never treat it as sign-off.
+- Read summary (the reviewer's overall message) first.
+- Each comment: id, filePath, line, endLine?, side, body, resolved, agentReply? (your reply from an earlier round), kind.
+  - side "old": the comment is on a deleted line; the reviewer questions the deletion, it is not an edit request.
+  - kind "suggestion": the reviewer edited the code. suggestion.original is the exact text of lines line..endLine when they made it, suggestion.replacement is what they want, suggestion.patch is the same change as a unified diff. Apply by exact search-and-replace of original (every character, whitespace included). With several suggestions in one file, apply them bottom-up, before any other edit to that file. If original is no longer present, do not improvise: report the mismatch in your reply.
 
 Workflow:
-1. When the result comes back, summarize each unresolved comment (file, line, what the reviewer said or which edit they suggested) and state your plan for each. Skip already-resolved comments.
+1. Summarize each unresolved comment (file:line, what was asked) and your plan, before changing anything. Skip resolved comments.
 2. Make the fixes.
-3. Call codechat_reply to record your responses.
-4. If status is "changes_requested" after replying, ask the user if they'd like another review round — then call codechat_review again.
-5. Repeat until status is "approved".
+3. Call codechat_reply with one reply per comment you addressed.
+4. If status was "changes_requested", ask the user whether they want another round before calling codechat_review again (each round waits on them).
 
-Proactively offer a review when you've made significant code changes and want the user to verify before proceeding — don't wait to be asked.
-
-Sessions are automatically resumed by repository path — calling this again on the same repo continues the existing session with all previous comments and replies preserved. Do not pass sessionId unless you need to resume a different session.`,
+Sessions resume automatically by repository (comments and replies are kept), except an approved session: the next review starts fresh. Pass newSession: true to start over anyway, for example when unrelated new work follows an unfinished review.`,
     {
-      repoPath: z.string().describe('Absolute path to the git repository'),
-      sessionId: z.string().optional().describe('Session ID to resume a specific past session. Usually not needed — sessions are auto-discovered by repoPath.'),
-      description: z.string().optional().describe('Brief description of the changes (e.g. "Add user authentication"). Stored with the session.'),
-      newSession: z.boolean().optional().describe('Force a fresh session instead of resuming the existing one. Only use when the user explicitly asks to start over.'),
+      repoPath: z.string().describe('Absolute path to the git repository (its root or any directory inside it)'),
+      sessionId: z.string().optional().describe('Session ID to resume a specific past session. Usually not needed: sessions are found by repoPath.'),
+      description: z.string().optional().describe('Brief description of the changes (e.g. "Add user authentication"). Shown to the reviewer.'),
+      newSession: z.boolean().optional().describe('Start a fresh session instead of resuming the current one (e.g. unrelated new work, or the user asks to start over).'),
+      base: z.string().optional().describe('Also review committed work: compare the working tree against this ref (e.g. "HEAD~1", "main"). Omit to review uncommitted changes only.'),
+      timeoutMinutes: z.number().int().positive().optional().describe('Minutes before the review ends without a submit (default 30). Keep it below any tool-call time limit of your client.'),
     },
-    async ({ repoPath, sessionId, description, newSession }) => {
+    async ({ repoPath, sessionId, description, newSession, base, timeoutMinutes }) => {
       try {
         const outcome = await executeReview({
           repoPath,
           sessionId,
           description,
           newSession,
+          base,
+          timeout: timeoutMinutes ? timeoutMinutes * 60_000 : undefined,
           openBrowser: true,
         });
 
         if (outcome.kind === 'empty_diff') {
-          return { content: [{ type: 'text' as const, text: 'No uncommitted changes found.' }] };
+          return { content: [{ type: 'text' as const, text: outcome.message }] };
         }
 
         return {
@@ -62,32 +68,23 @@ Sessions are automatically resumed by repository path — calling this again on 
 
   server.tool(
     'codechat_reply',
-    `Record replies to review comments after making fixes. Returns immediately with the updated ReviewResult.
+    `Record your replies to review comments after making fixes. Returns immediately with the updated session (no browser). The reviewer sees the replies in the next round.
 
-Always call this after making fixes — do not call codechat_review again just to submit replies. Set resolved to false on a reply when you have a clarifying question instead of a fix.`,
+Always call this after addressing a review; do not call codechat_review just to submit replies. Each reply needs commentId and body. resolved defaults to true: set it to false when you are asking a question or did not apply the change (for example a suggestion whose original text no longer matches).`,
     {
       repoPath: z.string().describe('Absolute path to the git repository'),
       replies: z.array(z.object({
-        commentId: z.string().describe('The comment ID being addressed'),
-        body: z.string().describe('Your reply explaining what you did or asking for clarification'),
-        resolved: z.boolean().optional().describe('Mark as resolved (default: true). Set to false to ask a follow-up question.'),
-      })).describe('Replies addressing comments from the previous review round.'),
+        commentId: z.string().describe('The id of the comment being addressed'),
+        body: z.string().describe('What you did, or your question'),
+        resolved: z.boolean().optional().describe('Mark as resolved (default: true). false for a question or a change you did not make.'),
+      })).min(1).describe('One reply per comment you addressed.'),
+      sessionId: z.string().optional().describe('Session to reply on. Usually not needed: defaults to the latest session of the repository.'),
     },
-    async ({ repoPath, replies }) => {
+    async ({ repoPath, replies, sessionId }) => {
       try {
-        const outcome = await executeReview({
-          repoPath,
-          replies,
-          skipReview: true,
-          openBrowser: false,
-        });
-
-        if (outcome.kind === 'empty_diff') {
-          return { content: [{ type: 'text' as const, text: 'No uncommitted changes found.' }] };
-        }
-
+        const result = await recordReplies(repoPath, replies, sessionId);
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(outcome.result, null, 2) }],
+          content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
         };
       } catch (err) {
         if (err instanceof WorkflowError) {

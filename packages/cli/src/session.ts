@@ -24,10 +24,17 @@ function sessionFilePath(repoPath: string, sessionId: string): string {
   return join(getDataDir(), sessionFileName(repoPath, sessionId));
 }
 
+/** What the working tree is compared against; absent for uncommitted changes only. */
+export interface SessionBase {
+  ref: string;
+  commit: string;
+}
+
 export async function createSession(
   repoPath: string,
   changes: CollectedChanges,
   description?: string,
+  base?: SessionBase,
 ): Promise<Session> {
   const now = new Date().toISOString();
   const session: Session = {
@@ -41,6 +48,7 @@ export async function createSession(
     skipped: changes.skipped,
     comments: [],
     ...(description ? { description } : {}),
+    ...(base ? { base: base.ref, baseCommit: base.commit } : {}),
   };
   await saveSession(session);
   pruneExpiredSessions();
@@ -139,9 +147,36 @@ function pruneExpiredSessions(): void {
   }).catch(() => { /* ignore */ });
 }
 
+export interface Reply {
+  commentId: string;
+  body: string;
+  resolved?: boolean;
+}
+
 export interface ResolveSessionOptions {
   description?: string;
-  replies?: { commentId: string; body: string; resolved?: boolean }[];
+  replies?: Reply[];
+  base?: SessionBase;
+}
+
+/** Record agent replies on a session's comments; replies resolve their comment unless `resolved` is false. */
+export function applyReplies(session: Session, replies: Reply[]): void {
+  const unknown = replies.filter((r) => !session.comments.some((c) => c.id === r.commentId));
+  if (unknown.length > 0) {
+    throw new Error(
+      `Unknown comment id${unknown.length > 1 ? 's' : ''} in session ${session.id}: ${unknown.map((r) => r.commentId).join(', ')}`,
+    );
+  }
+  const replyMap = new Map(replies.map((r) => [r.commentId, r]));
+  for (const comment of session.comments) {
+    const reply = replyMap.get(comment.id);
+    if (reply) {
+      comment.agentReply = reply.body;
+      if (reply.resolved !== false) {
+        comment.resolved = true;
+      }
+    }
+  }
 }
 
 /** Resume an existing session with fresh changes, resolving only comments the agent replied to. */
@@ -154,18 +189,16 @@ export function resumeSession(
   session.files = changes.files;
   session.skipped = changes.skipped;
   session.status = 'pending';
-
-  const replyMap = new Map(options?.replies?.map((r) => [r.commentId, r]));
-
-  for (const comment of session.comments) {
-    const reply = replyMap.get(comment.id);
-    if (reply) {
-      comment.agentReply = reply.body;
-      if (reply.resolved !== false) {
-        comment.resolved = true;
-      }
-    }
+  if (options?.description) session.description = options.description;
+  if (options?.base) {
+    session.base = options.base.ref;
+    session.baseCommit = options.base.commit;
+  } else {
+    delete session.base;
+    delete session.baseCommit;
   }
+
+  if (options?.replies) applyReplies(session, options.replies);
 }
 
 /**
@@ -173,8 +206,9 @@ export function resumeSession(
  * - If newSession is true, always creates a fresh session.
  * - If sessionId is provided, loads that specific session and resumes it.
  * - Otherwise, auto-discovers by repoPath:
- *   - Resumes the most recent session if one exists (regardless of status).
- *   - Creates a fresh session only if no session exists for this repo.
+ *   - Resumes the most recent session unless it was approved: approved work is done,
+ *     and a new task should not inherit its comments.
+ *   - Creates a fresh session otherwise.
  */
 export async function resolveSession(
   repoPath: string,
@@ -184,7 +218,7 @@ export async function resolveSession(
   const { sessionId, newSession, ...resumeOpts } = options ?? {};
 
   if (newSession) {
-    return createSession(repoPath, changes, resumeOpts.description);
+    return createSession(repoPath, changes, resumeOpts.description, resumeOpts.base);
   }
 
   if (sessionId) {
@@ -195,11 +229,11 @@ export async function resolveSession(
   }
 
   const existing = await findSessionByRepo(repoPath);
-  if (existing) {
+  if (existing && existing.status !== 'approved') {
     resumeSession(existing, changes, resumeOpts);
     await saveSession(existing);
     return existing;
   }
 
-  return createSession(repoPath, changes, resumeOpts.description);
+  return createSession(repoPath, changes, resumeOpts.description, resumeOpts.base);
 }

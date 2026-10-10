@@ -40,6 +40,20 @@ export function ReviewHeader() {
           <span className="text-base font-semibold" style={{ color: 'var(--color-text-primary)' }}>
             lemirecodechat
           </span>
+          <span
+            className="rounded-md px-2 py-0.5 text-xs font-medium"
+            style={{
+              border: `1px solid ${session.base ? 'var(--color-warning)' : 'var(--color-border-default)'}`,
+              color: session.base ? 'var(--color-warning)' : 'var(--color-text-secondary)',
+            }}
+            title={
+              session.base
+                ? `Working tree compared against ${session.base} (${session.baseCommit?.slice(0, 12)}): committed and uncommitted changes`
+                : 'Working tree compared against HEAD: nothing here is committed yet'
+            }
+          >
+            {session.base ? `Changes since ${session.base} (commits + uncommitted)` : 'Uncommitted changes'}
+          </span>
           <span className="text-sm" style={{ color: 'var(--color-text-secondary)' }}>
             {session.files.length} file{session.files.length !== 1 ? 's' : ''} changed
           </span>
