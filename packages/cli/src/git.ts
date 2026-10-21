@@ -17,12 +17,15 @@ export interface DiffLimits {
    * directory left untracked, say) does not swamp the browser.
    */
   maxTotalBytes: number;
+  /** Same idea, in changed lines: each one becomes a table row in the browser. */
+  maxTotalLines: number;
 }
 
 export const DEFAULT_LIMITS: DiffLimits = {
   maxLines: 1000,
   maxBytes: 256 * 1024,
-  maxTotalBytes: 2 * 1024 * 1024,
+  maxTotalBytes: 1024 * 1024,
+  maxTotalLines: 5000,
 };
 
 /** Hard cap on anything we send to the browser on demand (diffs, file contents). */
@@ -310,6 +313,7 @@ export async function collectChanges(
 
   const diffParts: string[] = [];
   let budget = limits.maxTotalBytes;
+  let lineBudget = limits.maxTotalLines;
 
   if (smallTracked.length > 0) {
     // git diff has no --pathspec-from-file, so pass paths as arguments in batches.
@@ -327,11 +331,13 @@ export async function collectChanges(
       const summary = path ? byPath.get(path) : undefined;
       // A few long lines can make a diff heavy even with a small line count
       const bytes = Buffer.byteLength(chunk);
-      if (summary && (bytes > limits.maxBytes || bytes > budget)) {
+      const lines = summary ? summary.additions + summary.deletions : 0;
+      if (summary && (bytes > limits.maxBytes || bytes > budget || lines > lineBudget)) {
         summary.large = true;
         continue;
       }
       budget -= bytes;
+      lineBudget -= lines;
       diffParts.push(chunk);
     }
   }
@@ -366,10 +372,11 @@ export async function collectChanges(
     const diff = untrackedDiff(path, content);
     const additions = content === '' ? 0 : content.split('\n').length - (content.endsWith('\n') ? 1 : 0);
     const summary: FileSummary = { path, status: 'added', additions, deletions: 0 };
-    if (additions > limits.maxLines || Buffer.byteLength(diff) > budget) {
+    if (additions > limits.maxLines || additions > lineBudget || Buffer.byteLength(diff) > budget) {
       summary.large = true;
     } else {
       budget -= Buffer.byteLength(diff);
+      lineBudget -= additions;
       diffParts.push(diff);
     }
     files.push(summary);

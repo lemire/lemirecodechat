@@ -281,6 +281,15 @@ test('many untracked files do not all inline: the rest load on demand', async ()
     assert.ok(loaded.diff.includes('+<p>'));
     client.ws.close();
     await outcome;
+
+    // The line budget applies too: 2 + 50 + 50 changed lines fit in 120, a third page does not
+    const byLines = await startReview({ repoPath: dir, limits: { maxTotalLines: 120 } });
+    const lineClient = connect(byLines.url);
+    const { data: lineSession } = await lineClient.next('init');
+    const inline = lineSession.files.filter((f) => !f.large);
+    assert.deepEqual(inline.map((f) => f.path), ['a.txt', 'public/page000.html', 'public/page001.html']);
+    lineClient.ws.close();
+    await byLines.outcome;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

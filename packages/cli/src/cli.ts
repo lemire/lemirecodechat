@@ -23,7 +23,8 @@ Options:
   -f, --file <path>          reply: read replies from this file (default: stdin)
   --max-lines <n>            Show diffs with more changed lines on demand only (default: 1000)
   --max-bytes <n>            Show diffs larger than this on demand only (default: 262144)
-  --max-total-bytes <n>      Once inline diffs reach this total, show the rest on demand only (default: 2097152)
+  --max-total-bytes <n>      Once inline diffs reach this total, show the rest on demand only (default: 1048576)
+  --max-total-lines <n>      Once inline diffs reach this many changed lines, show the rest on demand only (default: 5000)
   --no-open                  Don't open browser
   -v, --version              Show version
   -h, --help                 Show this help
@@ -55,6 +56,7 @@ async function runReview(options: {
   'max-lines'?: string;
   'max-bytes'?: string;
   'max-total-bytes'?: string;
+  'max-total-lines'?: string;
 }): Promise<void> {
   const outcome = await executeReview({
     repoPath: process.cwd(),
@@ -69,6 +71,7 @@ async function runReview(options: {
       maxLines: options['max-lines'] ? parseInt(options['max-lines'], 10) : undefined,
       maxBytes: options['max-bytes'] ? parseInt(options['max-bytes'], 10) : undefined,
       maxTotalBytes: options['max-total-bytes'] ? parseInt(options['max-total-bytes'], 10) : undefined,
+      maxTotalLines: options['max-total-lines'] ? parseInt(options['max-total-lines'], 10) : undefined,
     },
   });
 
@@ -171,6 +174,7 @@ async function main(): Promise<void> {
       'max-lines': { type: 'string' },
       'max-bytes': { type: 'string' },
       'max-total-bytes': { type: 'string' },
+      'max-total-lines': { type: 'string' },
       setup: { type: 'boolean' },
       help: { type: 'boolean', short: 'h' },
       version: { type: 'boolean', short: 'v' },

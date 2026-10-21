@@ -92,6 +92,7 @@ export function DiffView({ activeFile }: DiffViewProps) {
 
   return (
     <div
+      data-scroll-root
       className={`flex-1 overflow-y-auto px-6 py-4${mode === 'edit' ? ' edit-mode' : ''}${wrap ? '' : ' diff-nowrap'}`}
       style={{ backgroundColor: 'var(--color-page-bg)' }}
     >
@@ -142,14 +143,16 @@ export function DiffView({ activeFile }: DiffViewProps) {
             const loaded = state.largeDiffs[filePath];
             const parsed = typeof loaded === 'string' ? parseDiff(loaded, { nearbySequences: 'zip' })[0] : undefined;
             body = parsed ? (
-              <FileDiffSection
-                file={parsed}
-                filePath={filePath}
-                viewType={viewType}
-                mode={mode}
-                comments={fileComments}
-                showResolved={showResolved}
-              />
+              <LazyMount estimatedRows={summary.additions + summary.deletions}>
+                <FileDiffSection
+                  file={parsed}
+                  filePath={filePath}
+                  viewType={viewType}
+                  mode={mode}
+                  comments={fileComments}
+                  showResolved={showResolved}
+                />
+              </LazyMount>
             ) : (
               <LargeDiffPlaceholder
                 filePath={filePath}
@@ -162,14 +165,16 @@ export function DiffView({ activeFile }: DiffViewProps) {
           } else {
             const parsed = parsedByPath.get(filePath);
             body = parsed ? (
-              <FileDiffSection
-                file={parsed}
-                filePath={filePath}
-                viewType={viewType}
-                mode={mode}
-                comments={fileComments}
-                showResolved={showResolved}
-              />
+              <LazyMount estimatedRows={summary.additions + summary.deletions}>
+                <FileDiffSection
+                  file={parsed}
+                  filePath={filePath}
+                  viewType={viewType}
+                  mode={mode}
+                  comments={fileComments}
+                  showResolved={showResolved}
+                />
+              </LazyMount>
             ) : (
               <EmptyFileBody>No changes to display</EmptyFileBody>
             );
@@ -284,6 +289,39 @@ function EmptyFileBody({ children }: { children: ReactNode }) {
       {children}
     </div>
   );
+}
+
+/** Approximate height of a diff row, used to reserve space before a diff is rendered. */
+const ESTIMATED_ROW_HEIGHT = 20;
+
+/**
+ * Render `children` only once they come near the visible part of the page, and keep
+ * them afterwards. With many files, the diffs nobody scrolls to are never built, which
+ * keeps the DOM (and the syntax highlighting work) proportional to what is looked at.
+ */
+function LazyMount({ estimatedRows, children }: { estimatedRows: number; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (visible || !el) return;
+    if (typeof IntersectionObserver === 'undefined') {
+      setVisible(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((e) => e.isIntersecting)) setVisible(true);
+      },
+      { root: el.closest('[data-scroll-root]'), rootMargin: '1500px 0px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [visible]);
+
+  if (visible) return <>{children}</>;
+  return <div ref={ref} style={{ height: Math.max(1, estimatedRows) * ESTIMATED_ROW_HEIGHT }} />;
 }
 
 function LargeDiffPlaceholder({
