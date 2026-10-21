@@ -3,7 +3,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import WebSocket from 'ws';
@@ -256,6 +256,31 @@ test('committed work is reviewed with a base ref', async () => {
     client.send({ type: 'submit_review' });
     const done = await outcome;
     assert.equal(done.result.base, 'HEAD~1');
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test('many untracked files do not all inline: the rest load on demand', async () => {
+  const { dir } = smallRepo();
+  try {
+    mkdirSync(join(dir, 'public'));
+    for (let i = 0; i < 200; i++) writeFileSync(join(dir, 'public', `page${String(i).padStart(3, '0')}.html`), `<p>${i}</p>\n`.repeat(50));
+    const { url, outcome } = await startReview({ repoPath: dir, limits: { maxTotalBytes: 4096 } });
+    const client = connect(url);
+    const { data: session } = await client.next('init');
+    assert.equal(session.files.length, 201);
+    assert.equal(session.files.find((f) => f.path === 'a.txt').large, undefined, 'tracked changes come first');
+    const large = session.files.filter((f) => f.large);
+    assert.ok(large.length > 150, `expected most files on demand, got ${large.length}`);
+    assert.ok(session.diff.length <= 4096);
+    assert.equal(large[0].additions, 50);
+
+    client.send({ type: 'request_file_diff', data: { filePath: large[0].path } });
+    const { data: loaded } = await client.next('file_diff');
+    assert.ok(loaded.diff.includes('+<p>'));
+    client.ws.close();
+    await outcome;
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -6,7 +6,7 @@ Derived from [alexmx/codechat](https://github.com/alexmx/codechat) (MIT). Differ
 
 - **Suggested edits.** Switch the toolbar to **Edit** (or press `e`), then click or drag line numbers: an inline editor with syntax highlighting opens on those lines (extendable with *more above / more below*). The saved edit goes to the agent as a `suggestion` comment with `original`, `replacement` and a unified `patch`. Alt-click uses the other mode for one action (comment while in Edit mode, edit while in Comment mode). Suggestions can be re-opened and edited until submitted.
 - **No binary files.** Binary files (git's own detection for tracked files, a NUL-byte check for untracked ones) are left out of the review; a note lists them.
-- **Large diffs on demand.** Files whose diff exceeds 1000 changed lines or 256 KB are listed but not diffed; click **Load diff** to see one. Their diffs are not even computed until then, so a huge generated file no longer slows the review down. Thresholds: `--max-lines`, `--max-bytes`, or the `LEMIRECODECHAT_MAX_LINES` / `LEMIRECODECHAT_MAX_BYTES` environment variables.
+- **Large diffs on demand.** Files whose diff exceeds 1000 changed lines or 256 KB are listed but not diffed; click **Load diff** to see one. Their diffs are not even computed until then, so a huge generated file no longer slows the review down. All inline diffs together are also capped at 2 MB: past that, the remaining files load on demand too, so hundreds of untracked build outputs cannot freeze the page. Thresholds: `--max-lines`, `--max-bytes`, `--max-total-bytes`, or the `LEMIRECODECHAT_MAX_LINES` / `LEMIRECODECHAT_MAX_BYTES` / `LEMIRECODECHAT_MAX_TOTAL_BYTES` environment variables.
 - **Long lines wrap** instead of being cut off (toggle with *Wrap lines*; the choice is remembered). The editor wraps too.
 - Repositories without commits are diffed against the empty tree, so unstaged edits to added files show up.
 - The browser can only read files that are part of the review.
@@ -131,6 +131,7 @@ lemirecodechat mcp [--setup]                MCP server over stdio / setup help
   -t, --timeout <min>        Session timeout (default: 30)
   --max-lines <n>            Diffs with more changed lines load on demand (default: 1000)
   --max-bytes <n>            Diffs larger than this load on demand (default: 262144)
+  --max-total-bytes <n>      Once inline diffs reach this total, the rest load on demand (default: 2097152)
   --no-open                  Don't open the browser
   -f, --file <path>          reply: read replies from this file (default: stdin)
 ```

@@ -44,7 +44,10 @@ export interface ReviewOptions {
   limits?: Partial<DiffLimits>;
 }
 
-/** Diff limits from options, falling back to LEMIRECODECHAT_MAX_LINES / LEMIRECODECHAT_MAX_BYTES, then defaults. */
+/**
+ * Diff limits from options, falling back to LEMIRECODECHAT_MAX_LINES / LEMIRECODECHAT_MAX_BYTES /
+ * LEMIRECODECHAT_MAX_TOTAL_BYTES, then defaults.
+ */
 export function resolveLimits(limits?: Partial<DiffLimits>): DiffLimits {
   const env = (name: string) => {
     const n = parseInt(process.env[name] ?? '', 10);
@@ -53,6 +56,7 @@ export function resolveLimits(limits?: Partial<DiffLimits>): DiffLimits {
   return {
     maxLines: limits?.maxLines ?? env('LEMIRECODECHAT_MAX_LINES') ?? DEFAULT_LIMITS.maxLines,
     maxBytes: limits?.maxBytes ?? env('LEMIRECODECHAT_MAX_BYTES') ?? DEFAULT_LIMITS.maxBytes,
+    maxTotalBytes: limits?.maxTotalBytes ?? env('LEMIRECODECHAT_MAX_TOTAL_BYTES') ?? DEFAULT_LIMITS.maxTotalBytes,
   };
 }
 

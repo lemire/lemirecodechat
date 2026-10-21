@@ -11,11 +11,18 @@ export interface DiffLimits {
   maxLines: number;
   /** Files whose diff (or untracked content) exceeds this many bytes are not diffed until requested. */
   maxBytes: number;
+  /**
+   * Budget for all inline diffs together. Once it is spent, the remaining files are
+   * listed but only diffed on demand, so a change set with many files (a build output
+   * directory left untracked, say) does not swamp the browser.
+   */
+  maxTotalBytes: number;
 }
 
 export const DEFAULT_LIMITS: DiffLimits = {
   maxLines: 1000,
   maxBytes: 256 * 1024,
+  maxTotalBytes: 2 * 1024 * 1024,
 };
 
 /** Hard cap on anything we send to the browser on demand (diffs, file contents). */
@@ -302,6 +309,7 @@ export async function collectChanges(
   }
 
   const diffParts: string[] = [];
+  let budget = limits.maxTotalBytes;
 
   if (smallTracked.length > 0) {
     // git diff has no --pathspec-from-file, so pass paths as arguments in batches.
@@ -318,10 +326,12 @@ export async function collectChanges(
       const path = chunkPath(chunk);
       const summary = path ? byPath.get(path) : undefined;
       // A few long lines can make a diff heavy even with a small line count
-      if (summary && Buffer.byteLength(chunk) > limits.maxBytes) {
+      const bytes = Buffer.byteLength(chunk);
+      if (summary && (bytes > limits.maxBytes || bytes > budget)) {
         summary.large = true;
         continue;
       }
+      budget -= bytes;
       diffParts.push(chunk);
     }
   }
@@ -341,7 +351,8 @@ export async function collectChanges(
     }
     fingerprint.update(`?${path}:${info.size}:${info.mtimeMs}\n`);
 
-    if (info.size > limits.maxBytes) {
+    // The synthesized diff is about as large as the file itself
+    if (info.size > limits.maxBytes || info.size > budget) {
       const additions = info.size <= MAX_LINE_COUNT_BYTES ? await countLines(fullPath).catch(() => 0) : 0;
       files.push({ path, status: 'added', additions, deletions: 0, large: true });
       continue;
@@ -355,9 +366,10 @@ export async function collectChanges(
     const diff = untrackedDiff(path, content);
     const additions = content === '' ? 0 : content.split('\n').length - (content.endsWith('\n') ? 1 : 0);
     const summary: FileSummary = { path, status: 'added', additions, deletions: 0 };
-    if (additions > limits.maxLines) {
+    if (additions > limits.maxLines || Buffer.byteLength(diff) > budget) {
       summary.large = true;
     } else {
+      budget -= Buffer.byteLength(diff);
       diffParts.push(diff);
     }
     files.push(summary);
