@@ -1,6 +1,6 @@
 {
   "name": "lemirecodechat",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Human-in-the-loop code review (with suggested edits) for AI agents",
   "license": "MIT",
   "type": "module",
@@ -9,7 +9,10 @@
   },
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
-  "files": ["dist", "web-dist"],
+  "files": [
+    "dist",
+    "web-dist"
+  ],
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch"
