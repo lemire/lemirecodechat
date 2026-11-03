@@ -18,6 +18,8 @@ Options:
   --new                      Start a new session instead of resuming
   -b, --base <ref>           Also review commits: compare the working tree against <ref>
   -d, --description <text>   Describe the changes
+  -m, --pr-message <text>    Propose a PR message (Markdown) the reviewer can edit
+  --pr-message-file <path>   Same, read from a file
   -p, --port <n>             Server port
   -t, --timeout <min>        Session timeout (default: 30)
   -f, --file <path>          reply: read replies from this file (default: stdin)
@@ -50,6 +52,8 @@ async function runReview(options: {
   new?: boolean;
   base?: string;
   description?: string;
+  'pr-message'?: string;
+  'pr-message-file'?: string;
   port?: string;
   timeout?: string;
   'no-open'?: boolean;
@@ -58,12 +62,21 @@ async function runReview(options: {
   'max-total-bytes'?: string;
   'max-total-lines'?: string;
 }): Promise<void> {
+  if (options['pr-message'] !== undefined && options['pr-message-file'] !== undefined) {
+    throw new WorkflowError('Use either --pr-message or --pr-message-file, not both.');
+  }
+  const prMessage = options['pr-message-file'] !== undefined
+    ? await readFile(options['pr-message-file'], 'utf-8').catch((err) => {
+        throw new WorkflowError(`Cannot read ${options['pr-message-file']}: ${err.message}`);
+      })
+    : options['pr-message'];
   const outcome = await executeReview({
     repoPath: process.cwd(),
     sessionId: options.session,
     newSession: options.new,
     base: options.base,
     description: options.description,
+    prMessage,
     port: options.port ? parseInt(options.port, 10) : undefined,
     timeout: options.timeout ? parseInt(options.timeout, 10) * 60_000 : undefined,
     openBrowser: !options['no-open'],
@@ -168,6 +181,8 @@ async function main(): Promise<void> {
       base: { type: 'string', short: 'b' },
       file: { type: 'string', short: 'f' },
       description: { type: 'string', short: 'd' },
+      'pr-message': { type: 'string', short: 'm' },
+      'pr-message-file': { type: 'string' },
       port: { type: 'string', short: 'p' },
       timeout: { type: 'string', short: 't' },
       'no-open': { type: 'boolean' },

@@ -35,6 +35,7 @@ export async function createSession(
   changes: CollectedChanges,
   description?: string,
   base?: SessionBase,
+  prMessage?: string,
 ): Promise<Session> {
   const now = new Date().toISOString();
   const session: Session = {
@@ -49,6 +50,7 @@ export async function createSession(
     comments: [],
     ...(description ? { description } : {}),
     ...(base ? { base: base.ref, baseCommit: base.commit } : {}),
+    ...(prMessage !== undefined ? { prMessage } : {}),
   };
   await saveSession(session);
   pruneExpiredSessions();
@@ -157,6 +159,8 @@ export interface ResolveSessionOptions {
   description?: string;
   replies?: Reply[];
   base?: SessionBase;
+  /** A new PR message from the agent replaces the previous one and any reviewer edit of it. */
+  prMessage?: string;
 }
 
 /** Record agent replies on a session's comments; replies resolve their comment unless `resolved` is false. */
@@ -198,6 +202,11 @@ export function resumeSession(
     delete session.baseCommit;
   }
 
+  if (options?.prMessage !== undefined) {
+    session.prMessage = options.prMessage;
+    delete session.prMessageEdit;
+  }
+
   if (options?.replies) applyReplies(session, options.replies);
 }
 
@@ -218,7 +227,7 @@ export async function resolveSession(
   const { sessionId, newSession, ...resumeOpts } = options ?? {};
 
   if (newSession) {
-    return createSession(repoPath, changes, resumeOpts.description, resumeOpts.base);
+    return createSession(repoPath, changes, resumeOpts.description, resumeOpts.base, resumeOpts.prMessage);
   }
 
   if (sessionId) {
@@ -235,5 +244,5 @@ export async function resolveSession(
     return existing;
   }
 
-  return createSession(repoPath, changes, resumeOpts.description, resumeOpts.base);
+  return createSession(repoPath, changes, resumeOpts.description, resumeOpts.base, resumeOpts.prMessage);
 }

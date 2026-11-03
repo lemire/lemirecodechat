@@ -16,7 +16,8 @@ export async function startMcpServer(): Promise<void> {
 
 Scope: by default only UNCOMMITTED changes (working tree vs HEAD, untracked files included). If you already committed the work, pass base (e.g. "HEAD~1", "main") to compare the working tree against that ref.
 
-Result: { sessionId, status, reason, summary?, base?, comments }.
+Result: { sessionId, status, reason, summary?, base?, prMessage?, prMessageEdited?, comments }.
+- If you passed prMessage, the result's prMessage is the final text: when prMessageEdited is true the reviewer rewrote it, so use their version verbatim for the pull request.
 - Trust status "approved" only when reason is "submitted". reason "timeout" or "closed" means the user did not finish: say so and ask; never treat it as sign-off.
 - Read summary (the reviewer's overall message) first.
 - Each comment: id, filePath, line, endLine?, side, body, resolved, agentReply? (your reply from an earlier round), kind.
@@ -36,14 +37,16 @@ Sessions resume automatically by repository (comments and replies are kept), exc
       description: z.string().optional().describe('Brief description of the changes (e.g. "Add user authentication"). Shown to the reviewer.'),
       newSession: z.boolean().optional().describe('Start a fresh session instead of resuming the current one (e.g. unrelated new work, or the user asks to start over).'),
       base: z.string().optional().describe('Also review committed work: compare the working tree against this ref (e.g. "HEAD~1", "main"). Omit to review uncommitted changes only.'),
+      prMessage: z.string().optional().describe('Proposed pull request title and body, in Markdown. The reviewer can read and edit it; the result returns the final text. Omit if no PR is planned.'),
       timeoutMinutes: z.number().int().positive().optional().describe('Minutes before the review ends without a submit (default 30). Keep it below any tool-call time limit of your client.'),
     },
-    async ({ repoPath, sessionId, description, newSession, base, timeoutMinutes }) => {
+    async ({ repoPath, sessionId, description, newSession, base, prMessage, timeoutMinutes }) => {
       try {
         const outcome = await executeReview({
           repoPath,
           sessionId,
           description,
+          prMessage,
           newSession,
           base,
           timeout: timeoutMinutes ? timeoutMinutes * 60_000 : undefined,

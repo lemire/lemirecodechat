@@ -18,6 +18,10 @@ export interface Session {
   base?: string;
   /** Commit `base` resolved to when the review was opened. */
   baseCommit?: string;
+  /** Pull request message (Markdown) proposed by the agent, if any. */
+  prMessage?: string;
+  /** The reviewer's edited version of `prMessage`; absent while unedited. */
+  prMessageEdit?: string;
 }
 
 export interface FileSummary {
@@ -80,6 +84,10 @@ export interface ReviewResult {
   summary?: string;
   /** Present when the review covered commits: the ref the working tree was compared against. */
   base?: string;
+  /** Present when the agent proposed a PR message: the final text, including the reviewer's edits. */
+  prMessage?: string;
+  /** Present with `prMessage`: true when the reviewer changed it. */
+  prMessageEdited?: boolean;
 }
 
 export interface ReviewServer {
@@ -98,6 +106,7 @@ export type ServerMessage =
   | { type: 'diff_updated'; data: { diff: string; files: FileSummary[]; skipped: SkippedFile[] } }
   | { type: 'file_content'; data: { filePath: string; oldContent: string | null; newContent: string | null } }
   | { type: 'file_diff'; data: { filePath: string; diff: string } }
+  | { type: 'pr_message_updated'; data: { prMessageEdit: string | null } }
   | { type: 'error'; data: { message: string } }
   | { type: 'review_complete' };
 
@@ -118,4 +127,5 @@ export type ClientMessage =
   | { type: 'delete_comment'; data: { id: string } }
   | { type: 'submit_review'; data?: { summary?: string } }
   | { type: 'request_file_content'; data: { filePath: string } }
-  | { type: 'request_file_diff'; data: { filePath: string } };
+  | { type: 'request_file_diff'; data: { filePath: string } }
+  | { type: 'set_pr_message'; data: { text: string } };

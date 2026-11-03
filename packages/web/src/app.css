@@ -240,3 +240,22 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-scrollbar-thumb-hover);
 }
+
+/* PR message panel */
+.pr-message-text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 40vh;
+  overflow-y: auto;
+}
+.pr-message-editor .cm-editor {
+  max-height: 60vh;
+  min-height: 6rem;
+  font-size: 0.875rem;
+}
+.pr-message-editor .cm-scroller {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.pr-message-editor .cm-editor.cm-focused {
+  outline: none;
+}

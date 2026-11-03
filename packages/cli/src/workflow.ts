@@ -1,4 +1,4 @@
-import { isGitRepo, getRepoRoot, collectChanges, resolveCommit, DEFAULT_LIMITS, type DiffLimits } from './git.js';
+import { findRepoRoot, getDiffBase, collectChanges, resolveCommit, DEFAULT_LIMITS, type DiffLimits } from './git.js';
 import {
   resolveSession,
   loadSession,
@@ -25,6 +25,8 @@ export interface ReviewOptions {
   repoPath: string;
   sessionId?: string;
   description?: string;
+  /** Proposed pull request message (Markdown); the reviewer may edit it. */
+  prMessage?: string;
   replies?: Reply[];
   /** Only record `replies` (see `recordReplies`); don't open a review. */
   skipReview?: boolean;
@@ -67,10 +69,9 @@ export type ReviewOutcome =
   | { kind: 'reviewed'; result: ReviewResult; url: string };
 
 async function canonicalRepo(repoPath: string): Promise<string> {
-  if (!(await isGitRepo(repoPath))) {
-    throw new WorkflowError(`Not a git repository: ${repoPath}`);
-  }
-  return getRepoRoot(repoPath);
+  const root = await findRepoRoot(repoPath);
+  if (!root) throw new WorkflowError(`Not a git repository: ${repoPath}`);
+  return root;
 }
 
 /**
@@ -96,6 +97,9 @@ export async function executeReview(options: ReviewOptions): Promise<ReviewOutco
     return { kind: 'skipped', result };
   }
 
+  // Each git call costs ~10 ms: find what to diff against while locating the repository
+  const diffBase = options.base ? undefined : getDiffBase(options.repoPath);
+  diffBase?.catch(() => { /* not a repository: reported by canonicalRepo */ });
   const canonicalPath = await canonicalRepo(options.repoPath);
   const limits = resolveLimits(options.limits);
 
@@ -108,7 +112,7 @@ export async function executeReview(options: ReviewOptions): Promise<ReviewOutco
     }
   }
 
-  const changes = await collectChanges(canonicalPath, limits, base?.commit);
+  const changes = await collectChanges(canonicalPath, limits, base?.commit ?? (await diffBase));
 
   if (changes.files.length === 0) {
     return {
@@ -127,6 +131,7 @@ export async function executeReview(options: ReviewOptions): Promise<ReviewOutco
       replies: options.replies,
       newSession: options.newSession,
       base,
+      prMessage: options.prMessage,
     });
   } catch (err) {
     throw new WorkflowError((err as Error).message);

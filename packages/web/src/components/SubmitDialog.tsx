@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useReview } from '../context/ReviewContext';
+import { FLUSH_EVENT } from './PrMessagePanel';
 
 interface SubmitDialogProps {
   onClose: () => void;
@@ -13,6 +14,7 @@ export function SubmitDialog({ onClose }: SubmitDialogProps) {
   const resolvedCount = comments.filter((c) => c.resolved).length;
 
   function submit() {
+    window.dispatchEvent(new Event(FLUSH_EVENT));
     const trimmed = summary.trim();
     send({
       type: 'submit_review',

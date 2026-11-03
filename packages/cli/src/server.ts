@@ -65,6 +65,11 @@ const RequestFileDiffSchema = z.object({
   data: z.object({ filePath: z.string() }),
 });
 
+const SetPrMessageSchema = z.object({
+  type: z.literal('set_pr_message'),
+  data: z.object({ text: z.string() }),
+});
+
 const ClientMessageSchema = z.discriminatedUnion('type', [
   AddCommentSchema,
   EditCommentSchema,
@@ -72,6 +77,7 @@ const ClientMessageSchema = z.discriminatedUnion('type', [
   SubmitReviewSchema,
   RequestFileContentSchema,
   RequestFileDiffSchema,
+  SetPrMessageSchema,
 ]);
 
 const MIME_TYPES: Record<string, string> = {
@@ -86,12 +92,27 @@ const MIME_TYPES: Record<string, string> = {
   '.woff2': 'font/woff2',
 };
 
+/** Static files never change while the process runs: read each one once. */
+const staticCache = new Map<string, Promise<Buffer | null>>();
+
+function readStatic(filePath: string): Promise<Buffer | null> {
+  let entry = staticCache.get(filePath);
+  if (!entry) {
+    entry = stat(filePath)
+      .then((s) => (s.isFile() ? readFile(filePath) : null))
+      .catch(() => null);
+    staticCache.set(filePath, entry);
+  }
+  return entry;
+}
+
 async function serveStatic(
   webDistPath: string,
   req: IncomingMessage,
   res: ServerResponse,
 ): Promise<void> {
-  const url = req.url === '/' ? '/index.html' : req.url!;
+  const pathname = (req.url ?? '/').split('?')[0];
+  const url = pathname === '/' ? '/index.html' : pathname;
   const filePath = join(webDistPath, url);
 
   // Prevent directory traversal
@@ -101,26 +122,25 @@ async function serveStatic(
     return;
   }
 
-  try {
-    const fileStat = await stat(filePath);
-    if (!fileStat.isFile()) throw new Error('Not a file');
-
-    const ext = extname(filePath);
-    const contentType = MIME_TYPES[ext] || 'application/octet-stream';
-    const content = await readFile(filePath);
-
-    res.writeHead(200, { 'Content-Type': contentType });
+  const content = await readStatic(filePath);
+  if (content) {
+    res.writeHead(200, {
+      'Content-Type': MIME_TYPES[extname(filePath)] || 'application/octet-stream',
+      // Vite fingerprints everything under assets/: the browser may keep it forever
+      'Cache-Control': url.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache',
+    });
     res.end(content);
-  } catch {
-    // SPA fallback: serve index.html for unknown routes
-    try {
-      const indexContent = await readFile(join(webDistPath, 'index.html'));
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(indexContent);
-    } catch {
-      res.writeHead(404);
-      res.end('Not found');
-    }
+    return;
+  }
+
+  // SPA fallback: serve index.html for unknown routes (the session URL)
+  const indexContent = await readStatic(join(webDistPath, 'index.html'));
+  if (indexContent) {
+    res.writeHead(200, { 'Content-Type': 'text/html', 'Cache-Control': 'no-cache' });
+    res.end(indexContent);
+  } else {
+    res.writeHead(404);
+    res.end('Not found');
   }
 }
 
@@ -204,6 +224,9 @@ export async function startReviewServer(options: ServerOptions): Promise<ReviewS
         comments: session.comments,
         ...(reviewSummary ? { summary: reviewSummary } : {}),
         ...(session.base ? { base: session.base } : {}),
+        ...(session.prMessage !== undefined
+          ? { prMessage: session.prMessageEdit ?? session.prMessage, prMessageEdited: session.prMessageEdit !== undefined }
+          : {}),
       };
 
       if (timeoutTimer) clearTimeout(timeoutTimer);
@@ -349,6 +372,16 @@ export async function startReviewServer(options: ServerOptions): Promise<ReviewS
             }
 
             send(ws, { type: 'file_content', data: { filePath, oldContent, newContent } });
+            break;
+          }
+
+          case 'set_pr_message': {
+            if (session.prMessage === undefined) break;
+            const { text } = msg.data;
+            if (text === session.prMessage) delete session.prMessageEdit;
+            else session.prMessageEdit = text;
+            await saveSession(session);
+            broadcast(wss, { type: 'pr_message_updated', data: { prMessageEdit: session.prMessageEdit ?? null } });
             break;
           }
 

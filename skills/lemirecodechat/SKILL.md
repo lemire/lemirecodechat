@@ -12,14 +12,15 @@ description: Open a local browser UI (lemirecodechat) so the user can review you
 ## Before you start
 
 - **Scope.** By default only *uncommitted* changes are reviewed (working tree vs `HEAD`, untracked files included). If you already committed the work, pass a base ref covering your commits: `base: "HEAD~2"` (MCP) or `-b HEAD~2` (CLI), or the branch you started from (`main`). The page shows which scope it is.
-- **Installed?** For the CLI path, check `command -v lemirecodechat`. If it is missing, point the user to the install steps in the lemirecodechat README (`npm install && npm run build && npm link` in a clone) instead of improvising.
+- **Just run it.** Don't check first whether it is installed: every extra step delays the page. If the command is missing, see *Common failures*.
+- **PR message (optional).** If you are about to open a pull request, propose its message (Markdown: title line, blank line, body): `prMessage` (MCP) or `-m "…"` / `--pr-message-file pr.md` (CLI). The reviewer can edit it on the page.
 - **New work vs. old session.** Sessions resume automatically per repository, keeping earlier comments and replies. An approved session is never resumed. If the last session is unfinished but your new work is unrelated, start fresh: `newSession: true` (MCP) or `--new` (CLI).
 
 ## Calling it
 
 ### MCP
 
-- `codechat_review`: `repoPath` (required, absolute path inside the repository); optional `description` (shown to the reviewer), `base`, `newSession`, `sessionId`, `timeoutMinutes`. Blocks until the user submits.
+- `codechat_review`: `repoPath` (required, absolute path inside the repository); optional `description` (shown to the reviewer), `prMessage`, `base`, `newSession`, `sessionId`, `timeoutMinutes`. Blocks until the user submits.
 - `codechat_reply`: `repoPath` and `replies`, an array of `{ commentId, body, resolved? }`. Returns at once.
 
 Some MCP clients cap how long a tool call may run. If yours does, pass `timeoutMinutes` below that limit.
@@ -31,6 +32,7 @@ Run from the repository; it blocks until the user submits, then prints JSON on s
 ```bash
 lemirecodechat -d "Add user authentication"        # uncommitted changes
 lemirecodechat -b main -d "Add user authentication" # everything since main
+lemirecodechat -d "Add auth" --pr-message-file pr.md  # with a proposed PR message
 ```
 
 **The review can take many minutes; do not let your shell tool kill it.** In Claude Code the Bash tool times out after 2 minutes by default (10 at most): run the command in the background (`run_in_background`) and wait for it to finish, or set the tool timeout to its maximum and pass `-t 9` so the review ends first.
@@ -49,11 +51,12 @@ Other commands: `lemirecodechat sessions` (list), `lemirecodechat sessions <id>`
 ## Reading the result
 
 ```
-{ sessionId, status, reason, summary?, base?, comments: [...] }
+{ sessionId, status, reason, summary?, base?, prMessage?, prMessageEdited?, comments: [...] }
 ```
 
 - **`reason`** says how the round ended: `"submitted"` (the user clicked Submit), `"timeout"`, or `"closed"` (all tabs closed). **Only `status: "approved"` with `reason: "submitted"` is an approval.** On `timeout` or `closed`, tell the user the review was not finished and ask what to do; never treat silence as sign-off.
 - **`summary`**: the reviewer's overall message. Read it first.
+- **`prMessage`** (only if you proposed one): the final PR message. If `prMessageEdited` is true the reviewer rewrote it: use their text verbatim for the pull request. An edited message alone does not request code changes.
 - Each comment has `id`, `filePath`, `line`, optional `endLine`, `side`, `body`, `resolved`, optional `agentReply` (your reply from an earlier round) and `kind`:
   - `"comment"` (or no `kind`): free-text feedback.
   - `"suggestion"`: the reviewer edited the code. `suggestion.original` is the exact text of lines `line..endLine` of `filePath` when they made it, `suggestion.replacement` is what they want there, `suggestion.patch` is the same change as a unified diff. `body` is an optional rationale.
@@ -79,7 +82,7 @@ Other commands: `lemirecodechat sessions` (list), `lemirecodechat sessions <id>`
 
 ## Common failures
 
-- `lemirecodechat: command not found` (GUI agents often have a reduced `PATH`): use the absolute path from `which lemirecodechat`, or ask the user to install it.
+- `lemirecodechat: command not found` (GUI agents often have a reduced `PATH`): use the absolute path from `which lemirecodechat`. If it is not installed, point the user to the install steps in the lemirecodechat README (`npm install && npm run build && npm link` in a clone) instead of improvising.
 - "No uncommitted changes found": if you committed the work, re-run with a base ref. Otherwise tell the user there is nothing to review and stop.
 - The browser does not open: re-run with `--no-open` and give the user the URL printed on stderr (`Review server running at …`). Port conflict: `-p <port>`.
 - The review seems stuck or you lost the result: `lemirecodechat sessions` shows each session's status; `lemirecodechat sessions <id>` prints its comments.

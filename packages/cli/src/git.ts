@@ -76,23 +76,21 @@ function git(cwd: string, args: string[], { maxBytes = 512 * 1024 * 1024 } = {})
   });
 }
 
-export async function isGitRepo(cwd: string): Promise<boolean> {
+/** Root of the work tree containing `cwd`, or null outside one (one git call). */
+export async function findRepoRoot(cwd: string): Promise<string | null> {
   try {
-    return (await git(cwd, ['rev-parse', '--is-inside-work-tree'])).trim() === 'true';
+    const [inside, root] = (await git(cwd, ['rev-parse', '--is-inside-work-tree', '--show-toplevel'])).split('\n');
+    return inside === 'true' && root ? root : null;
   } catch {
-    return false;
+    return null;
   }
-}
-
-export async function getRepoRoot(cwd: string): Promise<string> {
-  return (await git(cwd, ['rev-parse', '--show-toplevel'])).trim();
 }
 
 /**
  * What to diff the working tree against: HEAD, or the empty tree in a repository
  * without commits (so every tracked file shows up as added).
  */
-async function getDiffBase(cwd: string): Promise<string> {
+export async function getDiffBase(cwd: string): Promise<string> {
   try {
     await git(cwd, ['rev-parse', '--verify', '--quiet', 'HEAD']);
     return 'HEAD';

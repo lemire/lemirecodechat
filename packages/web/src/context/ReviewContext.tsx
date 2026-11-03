@@ -44,6 +44,7 @@ type ReviewAction =
   | { type: 'FILE_CONTENT'; filePath: string; oldContent: string | null; newContent: string | null }
   | { type: 'FILE_DIFF'; filePath: string; diff: string }
   | { type: 'LARGE_DIFF_LOADING'; filePath: string }
+  | { type: 'PR_MESSAGE_UPDATED'; prMessageEdit: string | null }
   | { type: 'ERROR'; message: string | null }
   | { type: 'REVIEW_COMPLETE' }
   | { type: 'CONNECTION_STATUS'; connected: boolean }
@@ -108,6 +109,14 @@ function reviewReducer(state: ReviewState, action: ReviewAction): ReviewState {
           skipped: action.skipped,
         },
       };
+    case 'PR_MESSAGE_UPDATED': {
+      if (!state.session) return state;
+      const { prMessageEdit: _old, ...rest } = state.session;
+      return {
+        ...state,
+        session: action.prMessageEdit === null ? rest : { ...rest, prMessageEdit: action.prMessageEdit },
+      };
+    }
     case 'FILE_CONTENT':
       return {
         ...state,
@@ -204,6 +213,9 @@ export function ReviewProvider({ children }: { children: ReactNode }) {
         break;
       case 'file_diff':
         dispatch({ type: 'FILE_DIFF', filePath: msg.data.filePath, diff: msg.data.diff });
+        break;
+      case 'pr_message_updated':
+        dispatch({ type: 'PR_MESSAGE_UPDATED', prMessageEdit: msg.data.prMessageEdit });
         break;
       case 'error':
         dispatch({ type: 'ERROR', message: msg.data.message });

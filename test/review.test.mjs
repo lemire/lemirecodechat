@@ -294,3 +294,60 @@ test('many untracked files do not all inline: the rest load on demand', async ()
     rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('the reviewer can edit the proposed PR message', async () => {
+  const { dir } = smallRepo();
+  try {
+    // No PR message: the result has none
+    const plain = await (await startReview({ repoPath: dir, newSession: true, timeout: 100 })).outcome;
+    assert.equal(plain.result.prMessage, undefined);
+    assert.equal(plain.result.prMessageEdited, undefined);
+
+    const proposed = '# Add two\n\nAppends `two` to a.txt.\n';
+    const { url, outcome } = await startReview({ repoPath: dir, newSession: true, prMessage: proposed });
+    const client = connect(url);
+    const { data: session } = await client.next('init');
+    assert.equal(session.prMessage, proposed);
+    assert.equal(session.prMessageEdit, undefined);
+
+    client.send({ type: 'set_pr_message', data: { text: '# Add two\n\nBetter words.\n' } });
+    assert.equal((await client.next('pr_message_updated')).data.prMessageEdit, '# Add two\n\nBetter words.\n');
+    // Setting it back to the agent's text clears the edit
+    client.send({ type: 'set_pr_message', data: { text: proposed } });
+    assert.equal((await client.next('pr_message_updated')).data.prMessageEdit, null);
+    client.send({ type: 'set_pr_message', data: { text: 'Final text' } });
+    await client.next('pr_message_updated');
+
+    client.send({ type: 'submit_review' });
+    const { result } = await outcome;
+    assert.equal(result.status, 'approved');
+    assert.equal(result.prMessage, 'Final text');
+    assert.equal(result.prMessageEdited, true);
+
+    // CLI: from a file, submitted unedited
+    writeFileSync(join(dir, 'pr.md'), proposed);
+    const child = (await import('node:child_process')).spawn(
+      'node', [CLI, '--no-open', '--new', '--pr-message-file', 'pr.md'],
+      { cwd: dir, env: process.env, stdio: ['ignore', 'pipe', 'pipe'] },
+    );
+    let stdout = '';
+    child.stdout.on('data', (d) => (stdout += d));
+    const cliUrl = await new Promise((resolve) => {
+      let err = '';
+      child.stderr.on('data', (d) => {
+        err += d;
+        const m = /running at (\S+)/.exec(err);
+        if (m) resolve(m[1]);
+      });
+    });
+    const cliClient = connect(cliUrl);
+    assert.equal((await cliClient.next('init')).data.prMessage, proposed);
+    cliClient.send({ type: 'submit_review' });
+    await new Promise((r) => child.on('close', r));
+    const cliResult = JSON.parse(stdout);
+    assert.equal(cliResult.prMessage, proposed);
+    assert.equal(cliResult.prMessageEdited, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});

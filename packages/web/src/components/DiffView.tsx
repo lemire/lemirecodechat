@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect, useRef, type ReactNode, type ReactElement } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef, lazy, Suspense, type ReactNode, type ReactElement } from 'react';
 import { parseDiff, Diff, Hunk, Decoration, tokenize, markEdits, expandFromRawCode, getCollapsedLinesCountBetween } from 'react-diff-view';
 import { refractor } from 'refractor';
 import tsx from 'refractor/tsx';
@@ -6,13 +6,26 @@ import jsx from 'refractor/jsx';
 import 'react-diff-view/style/index.css';
 import { useReview } from '../context/ReviewContext';
 import { FileHeader } from './FileHeader';
+import { PrMessagePanel } from './PrMessagePanel';
 import { CommentWidget } from './CommentWidget';
 import { CommentForm } from './CommentForm';
-import { SuggestionEditor } from './SuggestionEditor';
 import { buildChangeKeyMap } from '../utils/changeKeyMapping';
 import { useGutterDrag } from '../hooks/useGutterDrag';
 import { detectLanguage } from '../utils/languageDetect';
 import type { Comment } from '../types';
+
+// CodeMirror is about half of the code: load it only when a suggestion editor opens,
+// and prefetch it once the page is idle so the first one opens without a delay.
+const loadSuggestionEditor = () => import('./SuggestionEditor');
+const SuggestionEditor = lazy(() => loadSuggestionEditor().then((m) => ({ default: m.SuggestionEditor })));
+function prefetchEditorWhenIdle(): void {
+  const load = () => { loadSuggestionEditor().catch(() => { /* retried on first use */ }); };
+  // Wait for a frame first, so the diff paints before CodeMirror is parsed
+  setTimeout(() => {
+    if (typeof requestIdleCallback === 'function') requestIdleCallback(load, { timeout: 5000 });
+    else load();
+  }, 500);
+}
 
 // Register languages not in refractor's common bundle
 refractor.register(tsx);
@@ -63,6 +76,11 @@ export function DiffView({ activeFile }: DiffViewProps) {
     }
     return map;
   }, [state.session?.diff]);
+
+  const hasSession = state.session !== null;
+  useEffect(() => {
+    if (hasSession) prefetchEditorWhenIdle();
+  }, [hasSession]);
 
   // "e" toggles edit mode, unless typing somewhere
   useEffect(() => {
@@ -131,6 +149,8 @@ export function DiffView({ activeFile }: DiffViewProps) {
             : 'Click or drag line numbers to comment · Alt-click to edit code'}
         </span>
       </div>
+
+      <PrMessagePanel />
 
       {state.session.files.map((summary) => {
         const filePath = summary.path;
@@ -492,7 +512,9 @@ function FileDiffSection({ file, filePath, viewType, mode, comments, showResolve
         <>
           {existing}
           {draft!.kind === 'suggestion' ? (
-            <SuggestionEditor draft={draft!} />
+            <Suspense fallback={<div className="py-4 text-center text-xs" style={{ color: 'var(--color-text-muted)' }}>Loading editor…</div>}>
+              <SuggestionEditor draft={draft!} />
+            </Suspense>
           ) : (
             <CommentForm
               filePath={filePath}

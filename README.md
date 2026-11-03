@@ -127,6 +127,8 @@ lemirecodechat mcp [--setup]                MCP server over stdio / setup help
   --new                      Start a new session instead of resuming
   -b, --base <ref>           Also review commits: compare the working tree against <ref>
   -d, --description <text>   Describe the changes
+  -m, --pr-message <text>    Propose a PR message (Markdown) the reviewer can edit
+  --pr-message-file <path>   Same, read from a file
   -p, --port <n>             Server port
   -t, --timeout <min>        Session timeout (default: 30)
   --max-lines <n>            Diffs with more changed lines load on demand (default: 1000)
@@ -149,6 +151,8 @@ Sessions are stored in `~/.local/share/lemirecodechat/sessions` (or `$XDG_DATA_H
   "status": "changes_requested",
   "reason": "submitted",
   "summary": "Close, two nits.",
+  "prMessage": "Add fast sum\n\nUnrolls the loop by three.",
+  "prMessageEdited": true,
   "comments": [
     {
       "id": "…",
@@ -171,6 +175,7 @@ Sessions are stored in `~/.local/share/lemirecodechat/sessions` (or `$XDG_DATA_H
 
 - `status` is `approved` only when the reviewer submitted with no unresolved comment; `reason` is `submitted`, `timeout` or `closed`.
 - `summary` is the reviewer's overall message from the submit dialog; `base` is present when the review covered commits.
+- `prMessage` is present when the agent proposed a PR message (`prMessage` in MCP, `-m`/`--pr-message-file` in the CLI): the final text, with `prMessageEdited: true` if the reviewer changed it in the page's Markdown editor. Editing it does not by itself request changes.
 - `side: "old"` marks a comment on a deleted line. Suggestions are always on the new side.
 - `agentReply` holds the agent's reply from an earlier round.
 
